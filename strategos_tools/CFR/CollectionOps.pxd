@@ -78,17 +78,17 @@ cdef class GTNode:
 
 	cdef vector_int    __AInds( self, uint numActions ) #noexcept
 
-	cdef ConnectionMap __CGraph( self, uint estimatorRank=* ) #noexcept
+	cdef ConnectionMap __CGraph( self ) #noexcept
 
 	cdef vector_ll     __get_path_node_keys( self ) #noexcept
 
 	cdef vector_ll     __get_successor_node_keys( self ) #noexcept
 
-	cdef void          __INIT_NON_TERMINUS__( self, uint estimatorRank ) #noexcept
+	cdef void          __INIT_NON_TERMINUS__( self ) #noexcept
 
 	cdef void          __INIT_TERMINUS__( self ) #noexcept
 
-	cdef void          __INIT__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal, uint estimatorRank=* ) #noexcept
+	cdef void          __INIT__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal ) #noexcept
 
 	cdef bint            Has_Direct_Connection_To( self, ll key ) #noexcept
 
@@ -274,7 +274,7 @@ cdef class CFRCollector:
 
 cdef void __await_prev_iter_completion( str advDir, str recDir ) #noexcept
 
-cdef void  _Do_Collection_Segment( str dataDir, int pRank, int sRank, int mSize, int gameSize, int nPlayers, int travs ) #noexcept
+cdef void  _Do_Collection_Segment( int device, str dataDir, int pRank, int sRank, int mSize, int gameSize, int nPlayers, int travs ) #noexcept
 
 
 # *-* # 

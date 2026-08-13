@@ -9,6 +9,17 @@ import torch as pt
 # ==================================================================================================
 
 
+def validate_device( device ):
+	
+	nGPU = pt.cuda.device_count()
+	if not (device==-1 or 0 <= device < nGPU):
+		details = f"Expected -1 (CPU, no GPU detected), got {device}." if nGPU==0 else                                \
+				  f"Expected -1 (CPU) or 0 (GPU, one detected), got {device}." if nGPU==1 else                        \
+				  f"Expected -1 (CPU) or GPU ID in range [0, {nGPU-1}], got {device}."
+		raise ValueError( f"Invalid estimator device specified. " + details )
+
+	return device
+
 def get_parameter_sets( model1, model2 ):
 
 	stateDicts  = [ model1.state_dict(), model2.state_dict() ]
@@ -46,7 +57,7 @@ def test_model_equivalence( model1, model2 ):
 	print( f"model1 ≈ model2: {parameters_close}" )
 	print()
 
-def AdvNetCompiler( aNet, GPUrank=0, mode='max-autotune' ):
+def AdvNetCompiler( aNet, device='cuda:0', mode='max-autotune' ):
 
 	print( f"\n===== COMPILING ADVNET =====" )
 	print( f"Compile mode: {mode}" )
@@ -58,7 +69,7 @@ def AdvNetCompiler( aNet, GPUrank=0, mode='max-autotune' ):
 	print( f"\n=== INITIALIZING COMPILED INFERENCE GRAPH ===" )
 
 	if not aNet.training:
-		dummyInputs = AdvNetInputs.DummyInputs( GPUrank )
+		dummyInputs = AdvNetInputs.DummyInputs( device )
 		H  = dummyInputs.H
 		A  = dummyInputs.A
 		nA = dummyInputs.nA
@@ -83,7 +94,7 @@ def AdvNetCompiler( aNet, GPUrank=0, mode='max-autotune' ):
 
 	return aNetCompiled
 
-def MMCompiler( mm, iterSpan, GPUrank=0, mode='max-autotune' ):
+def MMCompiler( mm, iterSpan, device='cuda:0', mode='max-autotune' ):
 
 	print( f"\n===== COMPILING MULTIMODEL =====" )
 	print( f"Compile mode: {mode}" )
@@ -93,7 +104,7 @@ def MMCompiler( mm, iterSpan, GPUrank=0, mode='max-autotune' ):
 	print( f"Compiled MM constructed." )
 
 	print( f"\n=== INITIALIZING COMPILED INFERENCE GRAPH ===" )
-	dummyInputs = MMInputs.DummyInputs( iterSpan, GPUrank )
+	dummyInputs = MMInputs.DummyInputs( iterSpan, device )
 	mmCompiled( dummyInputs )
 
 	print( f"MultiModel compiled and initialized successfully." )

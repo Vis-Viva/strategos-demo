@@ -19,9 +19,9 @@ cdef class AdvNetInputs:
 	cdef: # tensors for histories, cards, and actions
 		public object H, hC_c, hC_r, hC_s, fC_c, fC_r, fC_s, tC_c, tC_r, tC_s, rC_c, rC_r, rC_s, A
 		public uint   nA
-		public str    GPU
+		public str    device
 
-	cdef void __INIT__( self, infoset I, uint GPUrank=* ) #noexcept
+	cdef void __INIT__( self, infoset I, str device=* ) #noexcept
 
 	cdef void __init_history( self, infoset I ) #noexcept
 
@@ -30,7 +30,7 @@ cdef class AdvNetInputs:
 	cdef void __init_actions( self, infoset I ) #noexcept
 
 	@staticmethod
-	cdef AdvNetInputs _DummyInputs( uint GPUrank=* ) #noexcept
+	cdef AdvNetInputs _DummyInputs( str device=* ) #noexcept
 
 
 cdef class MMInputs:
@@ -38,9 +38,9 @@ cdef class MMInputs:
 	cdef: # tensors for histories, cards, and actions
 		public object H, hC_c, hC_r, hC_s, fC_c, fC_r, fC_s, tC_c, tC_r, tC_s, rC_c, rC_r, rC_s, A
 		public uint   nSamples, T, nI, nA
-		public str    GPU
+		public str    device
 
-	cdef void __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=* ) #noexcept
+	cdef void __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device=* ) #noexcept
 
 	cdef void __init_history( self, infoset Ipov, bint Opp_State ) #noexcept
 
@@ -49,7 +49,7 @@ cdef class MMInputs:
 	cdef void __init_actions( self, infoset Iap ) #noexcept
 
 	@staticmethod
-	cdef MMInputs _DummyInputs( uint iterSpan, uint GPUrank=* ) #noexcept
+	cdef MMInputs _DummyInputs( uint iterSpan, str device=* ) #noexcept
 	
 
 cdef class MMInputs_old:
@@ -57,13 +57,13 @@ cdef class MMInputs_old:
 	cdef public object H, hC, bC, A
 	cdef public uint   OLD_CVEC_SIZE, OLD_EVEC_SIZE, NEW_EVEC_SIZE, HOLEVEC_SIZE, BOARDVEC_SIZE, nSamples, T, nI, nA
 
-	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=* ) #noexcept
+	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device=* ) #noexcept
 
-	cdef void  __init_tensors( self, uint3 H, uint2 hC, uint2 bC, uint2 A, uint GPUrank ) #noexcept
+	cdef void  __init_tensors( self, uint3 H, uint2 hC, uint2 bC, uint2 A, str device ) #noexcept
 
-	cdef void  __init_pov_state( self, infoset Ipov, uint GPUrank ) #noexcept
+	cdef void  __init_pov_state( self, infoset Ipov, str device ) #noexcept
 
-	cdef void  __init_opp_state( self, infoset Ipov, uint GPUrank ) #noexcept
+	cdef void  __init_opp_state( self, infoset Ipov, str device ) #noexcept
 
 	cdef uint2 __CardConverter( self, uint[:] cardIDs ) #noexcept
 
@@ -125,7 +125,7 @@ cdef class DataBatch:
 		                      uint2 fCc, uint2 fCr, uint2 fCs,
 	                          uint1 tCc, uint1 tCr, uint1 tCs,
 	                          uint1 rCc, uint1 rCr, uint1 rCs,
-	                          uint2 A,   flt1 V,    uint1 W,   uint2 M, str GPU ) #noexcept
+	                          uint2 A,   flt1 V,    uint1 W,   uint2 M, str device ) #noexcept
 
 
 cdef class DATAMACHINE:
@@ -135,7 +135,7 @@ cdef class DATAMACHINE:
 
 		uint WORLD_SIZE, RANK, _dataStart, _dataStop, _final_bsize
 		bint _batches_uniform
-		str  GPU
+		str  DEVICE
 
 		# temp pre-batched storage
 		int3  _H
@@ -173,7 +173,7 @@ cdef class DATAMACHINE:
 
 	cdef void     __constructor_summary( self ) #noexcept
 
-	cdef void     __INIT__( self, list shuffledSamples, uint bsize, int world_size, int rank ) #noexcept
+	cdef void     __INIT__( self, list shuffledSamples, uint bsize, int world_size, int rank, str deviceType ) #noexcept
 
 	cdef void      _summary( self ) #noexcept
 

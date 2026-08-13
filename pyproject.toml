@@ -1,0 +1,11 @@
+[build-system]
+# Build requirements for Cython extension modules.
+# These are installed in an isolated env before running setup.py.
+requires = [
+  "setuptools>=64",
+  "wheel",
+  "Cython>=3.0",
+  # Python 3.12 requires relatively recent NumPy.
+  "numpy>=1.26",
+]
+build-backend = "setuptools.build_meta"

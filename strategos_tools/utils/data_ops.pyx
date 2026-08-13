@@ -216,7 +216,23 @@ cdef list  _load_true_samples( str from_file ): #noexcept:
 
 	return trueSamples
 
-# Final operation after completion of a CFR iter; just cleans up temp multi-worker collection files
+# After worker records are unified, destroy segmented records before next iter's CFRMonitor starts
+cdef void _post_collection_cleanup( recDir, for_iter ): #noexcept:
+
+	cdef:
+		list allFiles  = listdir( recDir )
+		uint nSegments = <uint>len( allFiles ), s
+		str  segmentFile
+
+	print( f"\nCleaning up iteration {for_iter} segmented records..." )
+	print( f"Destroying {nSegments} temp segrec files from dir: {recDir}..." )
+	
+	for s from 1 <= s <= nSegments:
+		segmentFile = recDir + '/' + allFiles[ s-1 ]
+		destroy( segmentFile )
+		print( f"\n\tSegRec file {cwd() + '/' + segmentFile} destroyed." )
+
+# Final operation after completion of a CFR iter; just cleans up temp multi-worker adv data files
 cdef void  _post_iter_cleanup( str advDir, uint for_iter ): #noexcept:
 
 	cdef:
@@ -283,6 +299,10 @@ def get_current_iter( metaFile ):
 	except EOFError: 
 		return 1
 	return mData.CurrentIter
+
+# Destroys segmented collection records, called after collection finishes and records are unified
+def post_collection_cleanup( recDir, for_iter ):
+	_post_collection_cleanup( recDir, for_iter )
 
 # Final iter-end temp file cleanup, called at end of iter's training phase
 def post_iter_cleanup( advDir, for_iter ):

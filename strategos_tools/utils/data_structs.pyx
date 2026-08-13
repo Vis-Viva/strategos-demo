@@ -40,12 +40,12 @@ from torch import as_tensor as TENSOR, float32 as tf32, int32 as tintc
 # Generates and stores single-iter AdvNet inference input tensors from an infoset
 cdef class AdvNetInputs:
 
-	def __init__( self, infoset I, uint GPUrank=0 ): 
-		self.__INIT__( I, GPUrank )
+	def __init__( self, infoset I, str device="cuda:0" ): 
+		self.__INIT__( I, device )
 
-	cdef void  __INIT__( self, infoset I, uint GPUrank=0 ): #noexcept:
+	cdef void  __INIT__( self, infoset I, str device="cuda:0" ): #noexcept:
 
-		self.GPU = f"cuda:{GPUrank}"
+		self.device = device
 		self.__init_history( I )
 		self.__init_cards( I )
 		self.__init_actions( I )
@@ -55,7 +55,7 @@ cdef class AdvNetInputs:
 
 		cdef uint3 hArr = cyarr( (1,I.hLen,EVEC_SIZE), UINTSIZE, 'I' )
 		hArr[0] = I.ObservableHistory()
-		self.H  = pt.tensor( NP( hArr,dtype=f32 ), device=self.GPU )
+		self.H  = pt.tensor( NP( hArr,dtype=f32 ), device=self.device )
 
 	# Constructs tensors for observable cards
 	cdef void  __init_cards( self, infoset I ): #noexcept:
@@ -73,41 +73,41 @@ cdef class AdvNetInputs:
 		tcArr[ 0 ] = bCards[ 3 ] # fourth is turn deal
 		rcArr[ 0 ] = bCards[ 4 ] # fifth is river deal
 
-		self.hC_c = pt.tensor( NP( hcArr[ :,:,CARD ], dtype=intc ), device=self.GPU ) # hole cardIDs
-		self.hC_r = pt.tensor( NP( hcArr[ :,:,RANK ], dtype=intc ), device=self.GPU ) # hole rankIDs
-		self.hC_s = pt.tensor( NP( hcArr[ :,:,SUIT ], dtype=intc ), device=self.GPU ) # hole suitIDs
+		self.hC_c = pt.tensor( NP( hcArr[ :,:,CARD ], dtype=intc ), device=self.device ) # hole cardIDs
+		self.hC_r = pt.tensor( NP( hcArr[ :,:,RANK ], dtype=intc ), device=self.device ) # hole rankIDs
+		self.hC_s = pt.tensor( NP( hcArr[ :,:,SUIT ], dtype=intc ), device=self.device ) # hole suitIDs
 
-		self.fC_c = pt.tensor( NP( fcArr[ :,:,CARD ], dtype=intc ), device=self.GPU ) # flop cardIDs
-		self.fC_r = pt.tensor( NP( fcArr[ :,:,RANK ], dtype=intc ), device=self.GPU ) # flop rankIDs
-		self.fC_s = pt.tensor( NP( fcArr[ :,:,SUIT ], dtype=intc ), device=self.GPU ) # flop suitIDs
+		self.fC_c = pt.tensor( NP( fcArr[ :,:,CARD ], dtype=intc ), device=self.device ) # flop cardIDs
+		self.fC_r = pt.tensor( NP( fcArr[ :,:,RANK ], dtype=intc ), device=self.device ) # flop rankIDs
+		self.fC_s = pt.tensor( NP( fcArr[ :,:,SUIT ], dtype=intc ), device=self.device ) # flop suitIDs
 
-		self.tC_c = pt.tensor( NP( tcArr[ :,CARD ],   dtype=intc ), device=self.GPU ) # turn cardIDs
-		self.tC_r = pt.tensor( NP( tcArr[ :,RANK ],   dtype=intc ), device=self.GPU ) # turn rankIDs
-		self.tC_s = pt.tensor( NP( tcArr[ :,SUIT ],   dtype=intc ), device=self.GPU ) # turn suitIDs
+		self.tC_c = pt.tensor( NP( tcArr[ :,CARD ],   dtype=intc ), device=self.device ) # turn cardIDs
+		self.tC_r = pt.tensor( NP( tcArr[ :,RANK ],   dtype=intc ), device=self.device ) # turn rankIDs
+		self.tC_s = pt.tensor( NP( tcArr[ :,SUIT ],   dtype=intc ), device=self.device ) # turn suitIDs
 
-		self.rC_c = pt.tensor( NP( rcArr[ :,CARD ],   dtype=intc ), device=self.GPU ) # river cardIDs
-		self.rC_r = pt.tensor( NP( rcArr[ :,RANK ],   dtype=intc ), device=self.GPU ) # river rankIDs
-		self.rC_s = pt.tensor( NP( rcArr[ :,SUIT ],   dtype=intc ), device=self.GPU ) # river suitIDs
+		self.rC_c = pt.tensor( NP( rcArr[ :,CARD ],   dtype=intc ), device=self.device ) # river cardIDs
+		self.rC_r = pt.tensor( NP( rcArr[ :,RANK ],   dtype=intc ), device=self.device ) # river rankIDs
+		self.rC_s = pt.tensor( NP( rcArr[ :,SUIT ],   dtype=intc ), device=self.device ) # river suitIDs
 
 	# Constructs tensors for available actions
 	cdef void  __init_actions( self, infoset I ): #noexcept:
 
 		cdef uint2 aArr = actionset( I ).AMat()
 		self.nA = aArr.shape[ 0 ]
-		self.A  = pt.tensor( NP( aArr,dtype=f32 ), device=self.GPU )
+		self.A  = pt.tensor( NP( aArr,dtype=f32 ), device=self.device )
 
 	# Generates dummy AdvNet data, useful for when we need to do a .forward() call for compile
 	@staticmethod
-	cdef AdvNetInputs _DummyInputs( uint GPUrank=0 ): #noexcept:
+	cdef AdvNetInputs _DummyInputs( str device="cuda:0" ): #noexcept:
 
 		cdef gamenode dummyNode = DummyNode()
 		cdef infoset  dumbI     = infoset( dummyNode, perspective_of=dummyNode.ActingPlayer() )
-		return AdvNetInputs( dumbI,GPUrank )
+		return AdvNetInputs( dumbI,device )
 
 	# Just lets us call the above from python NN code
 	@staticmethod
-	def DummyInputs( uint GPUrank=0 ):
-		return AdvNetInputs._DummyInputs( GPUrank )
+	def DummyInputs( str device="cuda:0" ):
+		return AdvNetInputs._DummyInputs( device )
 
 
 # Same deal as AdvNetInputs, but for MultiModel. Unlike AdvNet, MultiModel is used both in situations
@@ -116,13 +116,13 @@ cdef class AdvNetInputs:
 # may have been dealt). Hence, MMInputs must handle both of these situations.
 cdef class MMInputs:
 
-	def __init__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=0 ): 
-		self.__INIT__( actingPlayer, Ipov, iterSpan, GPUrank )
+	def __init__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device="cuda:0" ): 
+		self.__INIT__( actingPlayer, Ipov, iterSpan, device )
 
-	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=0 ): #noexcept:
+	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device="cuda:0" ): #noexcept:
 
-		self.T   = iterSpan + 1 # Useful downstream to store this on MMInputs
-		self.GPU = f"cuda:{GPUrank}"
+		self.T      = iterSpan + 1 # Useful downstream to store this on MMInputs
+		self.device = device
 
 		# Is POV or OPP acting at the position we're evaluating? Tells us whose hole cards to use
 		cdef bint Opp_State = Are_Opponents( actingPlayer, Ipov.POVplayer )
@@ -153,7 +153,7 @@ cdef class MMInputs:
 			hArr[ 0 ] = Ipov.ObservableHistory()
 
 		self.nI = hArr.shape[ 0 ] # number of distinct infosets we're evaluating actions for
-		self.H  = pt.tensor( NP( hArr,dtype=f32 ), device=self.GPU )
+		self.H  = pt.tensor( NP( hArr,dtype=f32 ), device=self.device )
 
 	# Constructs card tensors, accounts for whether we're doing pov or opp inference
 	cdef void __init_cards( self, infoset Ipov, bint Opp_State ): #noexcept:
@@ -176,53 +176,53 @@ cdef class MMInputs:
 		tcArr[ 0 ] = bCards[ 3 ] # turn  = fourth board deal
 		rcArr[ 0 ] = bCards[ 4 ] # river = fifth board deal
 
-		self.hC_c = pt.tensor( NP( hcArr[ :,:,CARD ], dtype=intc ), device=self.GPU ) # hole cardIDs
-		self.hC_r = pt.tensor( NP( hcArr[ :,:,RANK ], dtype=intc ), device=self.GPU ) # hole rankIDs
-		self.hC_s = pt.tensor( NP( hcArr[ :,:,SUIT ], dtype=intc ), device=self.GPU ) # hole suitIDs
+		self.hC_c = pt.tensor( NP( hcArr[ :,:,CARD ], dtype=intc ), device=self.device ) # hole cardIDs
+		self.hC_r = pt.tensor( NP( hcArr[ :,:,RANK ], dtype=intc ), device=self.device ) # hole rankIDs
+		self.hC_s = pt.tensor( NP( hcArr[ :,:,SUIT ], dtype=intc ), device=self.device ) # hole suitIDs
 
-		self.fC_c = pt.tensor( NP( fcArr[ :,:,CARD ], dtype=intc ), device=self.GPU ) # flop cardIDs
-		self.fC_r = pt.tensor( NP( fcArr[ :,:,RANK ], dtype=intc ), device=self.GPU ) # flop rankIDs
-		self.fC_s = pt.tensor( NP( fcArr[ :,:,SUIT ], dtype=intc ), device=self.GPU ) # flop suitIDs
+		self.fC_c = pt.tensor( NP( fcArr[ :,:,CARD ], dtype=intc ), device=self.device ) # flop cardIDs
+		self.fC_r = pt.tensor( NP( fcArr[ :,:,RANK ], dtype=intc ), device=self.device ) # flop rankIDs
+		self.fC_s = pt.tensor( NP( fcArr[ :,:,SUIT ], dtype=intc ), device=self.device ) # flop suitIDs
 
-		self.tC_c = pt.tensor( NP( tcArr[ :,CARD ],   dtype=intc ), device=self.GPU ) # turn cardIDs
-		self.tC_r = pt.tensor( NP( tcArr[ :,RANK ],   dtype=intc ), device=self.GPU ) # turn rankIDs
-		self.tC_s = pt.tensor( NP( tcArr[ :,SUIT ],   dtype=intc ), device=self.GPU ) # turn suitIDs
+		self.tC_c = pt.tensor( NP( tcArr[ :,CARD ],   dtype=intc ), device=self.device ) # turn cardIDs
+		self.tC_r = pt.tensor( NP( tcArr[ :,RANK ],   dtype=intc ), device=self.device ) # turn rankIDs
+		self.tC_s = pt.tensor( NP( tcArr[ :,SUIT ],   dtype=intc ), device=self.device ) # turn suitIDs
 
-		self.rC_c = pt.tensor( NP( rcArr[ :,CARD ],   dtype=intc ), device=self.GPU ) # river cardIDs
-		self.rC_r = pt.tensor( NP( rcArr[ :,RANK ],   dtype=intc ), device=self.GPU ) # river rankIDs
-		self.rC_s = pt.tensor( NP( rcArr[ :,SUIT ],   dtype=intc ), device=self.GPU ) # river suitIDs
+		self.rC_c = pt.tensor( NP( rcArr[ :,CARD ],   dtype=intc ), device=self.device ) # river cardIDs
+		self.rC_r = pt.tensor( NP( rcArr[ :,RANK ],   dtype=intc ), device=self.device ) # river rankIDs
+		self.rC_s = pt.tensor( NP( rcArr[ :,SUIT ],   dtype=intc ), device=self.device ) # river suitIDs
 
 	# Constructs actionset tensor from an actionset matrix
 	cdef void __init_actions( self, infoset Iap ): #noexcept:
 
 		cdef uint2 aArr = actionset( Iap ).AMat()
 		self.nA = aArr.shape[ 0 ]
-		self.A  = pt.tensor( NP( aArr,dtype=f32 ), device=self.GPU )
+		self.A  = pt.tensor( NP( aArr,dtype=f32 ), device=self.device )
 
 	# Generates some dummy MM input data, useful for when we need to do a .forward() call for compile
 	@staticmethod
-	cdef MMInputs _DummyInputs( uint iterSpan, uint GPUrank=0 ): #noexcept:
+	cdef MMInputs _DummyInputs( uint iterSpan, str device="cuda:0" ): #noexcept:
 
 		cdef:
 			gamenode dummyNode  = DummyNode()
 			uint     dumbPlayer = dummyNode.ActingPlayer()
 			infoset  dumbI      = infoset( dummyNode, perspective_of=dumbPlayer )
 
-		return MMInputs( dumbPlayer, dumbI, iterSpan, GPUrank )
+		return MMInputs( dumbPlayer, dumbI, iterSpan, device )
 
 	# Just lets us call the above from python NN code
 	@staticmethod
-	def DummyInputs( uint iterSpan, uint GPUrank=0 ): 
-		return MMInputs._DummyInputs( iterSpan,GPUrank )
+	def DummyInputs( uint iterSpan, str device="cuda:0" ): 
+		return MMInputs._DummyInputs( iterSpan,device )
 
 
 # Legacy MM input format for doing evals against old non-transformer models w old card vector format
 cdef class MMInputs_old:
 
-	def __init__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=0 ): 
-		self.__INIT__( actingPlayer, Ipov, iterSpan, GPUrank )
+	def __init__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device="cuda:0" ): 
+		self.__INIT__( actingPlayer, Ipov, iterSpan, device )
 
-	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, uint GPUrank=0 ): #noexcept:
+	cdef void  __INIT__( self, uint actingPlayer, infoset Ipov, uint iterSpan, str device="cuda:0" ): #noexcept:
 
 		self.T = iterSpan + 1
 		self.OLD_CVEC_SIZE = 17
@@ -232,12 +232,12 @@ cdef class MMInputs_old:
 		self.BOARDVEC_SIZE = self.OLD_CVEC_SIZE * MAX_BOARD_CARDS # = 85
 
 		if Are_Opponents( actingPlayer,Ipov.POVplayer ): 
-			self.__init_opp_state( Ipov,GPUrank )
+			self.__init_opp_state( Ipov,device )
 		else:
-			self.__init_pov_state( Ipov,GPUrank )
+			self.__init_pov_state( Ipov,device )
 
 	# Orchestrates construction of legacy inputs for POV player states
-	cdef void  __init_pov_state( self, infoset Ipov, uint GPUrank ): #noexcept:
+	cdef void  __init_pov_state( self, infoset Ipov, str device ): #noexcept:
 
 		cdef:
 			uint1   dealSteps  = Ipov.DealSteps()
@@ -250,6 +250,7 @@ cdef class MMInputs_old:
 				    bcArr      = self.__CardConverter( bCardIDs )
 			uint3   hArr       = cyarr( (1, Ipov.hLen, self.NEW_EVEC_SIZE), UINTSIZE, 'I' ), convHist
 			uint    nA         = convASet.shape[ 0 ]
+
 		hArr[ 0 ] = Ipov.ObservableHistory()
 
 		convHist      = self.__HistoryConverter( hArr,dealSteps )
@@ -259,10 +260,10 @@ cdef class MMInputs_old:
 		self.nI = 1
 		self.nA = nA
 		self.nSamples = nA # Only running inference on 1 definite POV infoset I, so total num samples is just |A(I)|
-		self.__init_tensors( convHist, convHCards, convBCards, convASet, GPUrank )
+		self.__init_tensors( convHist, convHCards, convBCards, convASet, device )
 
 	# Orchestrates construction of legacy inputs for opponent states
-	cdef void  __init_opp_state( self, infoset Ipov, uint GPUrank ): #noexcept:
+	cdef void  __init_opp_state( self, infoset Ipov, str device ): #noexcept:
 
 		cdef:
 			infoset   Iopp       = infoset( sourceNode=Ipov._n, perspective_of=Ipov.OPPplayer )
@@ -277,7 +278,7 @@ cdef class MMInputs_old:
 					  convBCards = cyarr( (1,self.BOARDVEC_SIZE), UINTSIZE, 'I' ),                                     \
 					  bcArr      = self.__CardConverter( bCardIDs ),                                                   \
 					  hcArr
-			uint3     convHist   = self.__HistoryConverter( Ipov.PossibleOppHistories(),dealSteps )
+			uint3     convHist   = self.__HistoryConverter( Ipov.PossibleOppHistories(), dealSteps )
 
 		convBCards[0] = self.__MultiCardVec( bcArr )
 
@@ -288,14 +289,13 @@ cdef class MMInputs_old:
 		self.nI = nH
 		self.nA = nA
 		self.nSamples = nH*nA # Each action has to be eval'd against each possible opponent infoset
-		self.__init_tensors( convHist, convHCards, convBCards, convASet, GPUrank )
+		self.__init_tensors( convHist, convHCards, convBCards, convASet, device )
 
-	cdef void  __init_tensors( self, uint3 H, uint2 hC, uint2 bC, uint2 A, uint GPUrank ): #noexcept:
-		cdef str GPU = f"cuda:{GPUrank}"
-		self.H  = pt.tensor( NP( H, dtype=f32 ), device=GPU )
-		self.hC = pt.tensor( NP( hC,dtype=f32 ), device=GPU )
-		self.bC = pt.tensor( NP( bC,dtype=f32 ), device=GPU )
-		self.A  = pt.tensor( NP( A, dtype=f32 ), device=GPU )
+	cdef void  __init_tensors( self, uint3 H, uint2 hC, uint2 bC, uint2 A, str device ): #noexcept:
+		self.H  = pt.tensor( NP( H, dtype=f32 ), device=device )
+		self.hC = pt.tensor( NP( hC,dtype=f32 ), device=device )
+		self.bC = pt.tensor( NP( bC,dtype=f32 ), device=device )
+		self.A  = pt.tensor( NP( A, dtype=f32 ), device=device )
 
 	# Converts modern single-int card IDs to old binary vector representation
 	cdef uint2 __CardConverter( self, uint[:] cardIDs ): #noexcept:
@@ -505,9 +505,9 @@ cdef class DataBatch:
 						uint2 fCc, uint2 fCr, uint2 fCs,
 						uint1 tCc, uint1 tCr, uint1 tCs,
 						uint1 rCc, uint1 rCr, uint1 rCs,
-						uint2 A,   flt1  V,   uint1 W,   uint2 M, str GPU ):
+						uint2 A,   flt1  V,   uint1 W,   uint2 M, str device ):
 
-		self.__INIT__( H, hCc,hCr,hCs, fCc,fCr,fCs, tCc,tCr,tCs, rCc,rCr,rCs, A, V, W, M, GPU )
+		self.__INIT__( H, hCc,hCr,hCs, fCc,fCr,fCs, tCc,tCr,tCs, rCc,rCr,rCs, A, V, W, M, device )
 
 
 	# TODO: Roll these inputs up into a tuple or something, this function signature is a warcrime.
@@ -516,41 +516,41 @@ cdef class DataBatch:
 							  uint2 fCc, uint2 fCr, uint2 fCs,
 							  uint1 tCc, uint1 tCr, uint1 tCs,
 							  uint1 rCc, uint1 rCr, uint1 rCs,
-							  uint2 A,   flt1 V,    uint1 W,   uint2 M, str GPU ): #noexcept:
+							  uint2 A,   flt1 V,    uint1 W,   uint2 M, str device ): #noexcept:
 
 		self.size = H.shape[ 0 ] # Each sample has one history, so batch size = num histories
-		self.H    = TENSOR( NP( H,  dtype=f32  ), device=GPU ) # Game histories
-		self.hCc  = TENSOR( NP( hCc,dtype=intc ), device=GPU ) # Hole cardIDs
-		self.hCr  = TENSOR( NP( hCr,dtype=intc ), device=GPU ) # Hole rankIDs
-		self.hCs  = TENSOR( NP( hCs,dtype=intc ), device=GPU ) # Hole suitIDs
-		self.fCc  = TENSOR( NP( fCc,dtype=intc ), device=GPU ) # Flop cardIDs
-		self.fCr  = TENSOR( NP( fCr,dtype=intc ), device=GPU ) # Flop rankIDs
-		self.fCs  = TENSOR( NP( fCs,dtype=intc ), device=GPU ) # Flop suitIDs
-		self.tCc  = TENSOR( NP( tCc,dtype=intc ), device=GPU ) # Turn cardIDs
-		self.tCr  = TENSOR( NP( tCr,dtype=intc ), device=GPU ) # Turn rankIDs
-		self.tCs  = TENSOR( NP( tCs,dtype=intc ), device=GPU ) # Turn suitIDs
-		self.rCc  = TENSOR( NP( rCc,dtype=intc ), device=GPU ) # River cardIDs
-		self.rCr  = TENSOR( NP( rCr,dtype=intc ), device=GPU ) # River rankIDs
-		self.rCs  = TENSOR( NP( rCs,dtype=intc ), device=GPU ) # River suitIDs
-		self.A    = TENSOR( NP( A,  dtype=f32  ), device=GPU ) # Action vectors
-		self.V    = TENSOR( NP( V,  dtype=f32  ), device=GPU ) # Adv targets
-		self.W    = TENSOR( NP( W,  dtype=f32  ), device=GPU ) # Samples weighted with iterNum they were collected on
-		self.M    = TENSOR( NP( M,  dtype=bool ), device=GPU ) # Bool transformer mask for nonuniform history inputs
+		self.H    = TENSOR( NP( H,  dtype=f32  ), device=device ) # Game histories
+		self.hCc  = TENSOR( NP( hCc,dtype=intc ), device=device ) # Hole cardIDs
+		self.hCr  = TENSOR( NP( hCr,dtype=intc ), device=device ) # Hole rankIDs
+		self.hCs  = TENSOR( NP( hCs,dtype=intc ), device=device ) # Hole suitIDs
+		self.fCc  = TENSOR( NP( fCc,dtype=intc ), device=device ) # Flop cardIDs
+		self.fCr  = TENSOR( NP( fCr,dtype=intc ), device=device ) # Flop rankIDs
+		self.fCs  = TENSOR( NP( fCs,dtype=intc ), device=device ) # Flop suitIDs
+		self.tCc  = TENSOR( NP( tCc,dtype=intc ), device=device ) # Turn cardIDs
+		self.tCr  = TENSOR( NP( tCr,dtype=intc ), device=device ) # Turn rankIDs
+		self.tCs  = TENSOR( NP( tCs,dtype=intc ), device=device ) # Turn suitIDs
+		self.rCc  = TENSOR( NP( rCc,dtype=intc ), device=device ) # River cardIDs
+		self.rCr  = TENSOR( NP( rCr,dtype=intc ), device=device ) # River rankIDs
+		self.rCs  = TENSOR( NP( rCs,dtype=intc ), device=device ) # River suitIDs
+		self.A    = TENSOR( NP( A,  dtype=f32  ), device=device ) # Action vectors
+		self.V    = TENSOR( NP( V,  dtype=f32  ), device=device ) # Adv targets
+		self.W    = TENSOR( NP( W,  dtype=f32  ), device=device ) # Samples weighted by iterNum they were collected on
+		self.M    = TENSOR( NP( M,  dtype=bool ), device=device ) # Bool transformer mask for nonuniform hist inputs
 
 
 # Specialized replacement for PyTorch's bloated DataLoader. 
 # Allocates, populates, and exposes batched training data in a way compatible with multi-GPU training.
 cdef class DATAMACHINE:
 
-	def __init__( self, list shuffledSamples, uint bsize, int world_size, int rank ):
-		self.__INIT__( shuffledSamples, bsize, world_size, rank )
+	def __init__( self, list shuffledSamples, uint bsize, int world_size, int rank, str deviceType ):
+		self.__INIT__( shuffledSamples, bsize, world_size, rank, deviceType )
 
 	# Determine mem layout from sample shapes ⟶ allocate mem ⟶ fill allocated storage ⟶ partition into batches
-	cdef void     __INIT__( self, list shuffledSamples, uint bsize, int world_size, int rank ): #noexcept:
+	cdef void     __INIT__( self, list shuffledSamples, uint bsize, int world_size, int rank, str deviceType ): #noexcept:
 
 		self.WORLD_SIZE = world_size
+		self.DEVICE     = f"cuda:{rank}" if deviceType=='cuda' else 'cpu'
 		self.RANK       = rank
-		self.GPU        = f"cuda:{rank}"
 		self.__determine_storage_layout( shuffledSamples, bsize )
 		self.__allocate_temp_storage()
 		self.__populate_temp_storage( shuffledSamples )
@@ -782,8 +782,8 @@ cdef class DATAMACHINE:
 		cdef str                                                                                                       \
 			header = "\n"+(f"="*50)+"\n"+f"DATAMACHINE CONSTRUCTED @ RANK {self.RANK}".center(50),                     \
 			wsStr  = f"WORLD_SIZE = {self.WORLD_SIZE}\n",                                                              \
+			dvStr  = f"DEVICE     = {self.DEVICE}    \n",                                                              \
 			rStr   = f"RANK       = {self.RANK}      \n",                                                              \
-			dvStr  = f"GPU        = {self.GPU}       \n",                                                              \
 			stStr  = f"_dataStart = {self._dataStart}\n",                                                              \
 			spStr  = f"_dataStop  = {self._dataStop} \n",                                                              \
 			bsStr  = f"BatchSize  = {self.BatchSize} \n",                                                              \
@@ -829,7 +829,7 @@ cdef class DATAMACHINE:
 
 		# TODO: Seriously this function signature is a warcrime, roll this up into a tuple or something
 		return DataBatch( bH, bhCc,bhCr,bhCs, bfCc,bfCr,bfCs, btCc,btCr,btCs, brCc,brCr,brCs, 
-						  bA, bV, bW, bM, self.GPU )
+						  bA, bV, bW, bM, self.DEVICE )
 
 	# TODO: C_batched was split into rank, suit, and card idx fields, fix this
 	cdef void      _summary( self ): #noexcept:
@@ -838,8 +838,8 @@ cdef class DATAMACHINE:
 		print( "DATAMACHINE SUMMARY".center(50) )
 		print( ('='*50)+'\n' )
 		print( f"\tWORLD_SIZE:........{self.WORLD_SIZE}" )
+		print( f"\tDEVICE:............{self.DEVICE}" )
 		print( f"\tRANK:..............{self.RANK}" )
-		print( f"\tGPU:...............{self.GPU}" )
 		print( f"\tSamples:...........{self.nSamples}" )
 		print( f"\tBatchSize:.........{self.BatchSize}" )
 		print( f"\tnBatches:..........{self.nBatches}" )

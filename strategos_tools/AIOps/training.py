@@ -329,58 +329,68 @@ class TrainManager:
 		print()
 
 
-def _get_training_parameters( dataDir, metaFile, modelSize, epoch_override, bsize_override, lRate_override ):
+def _get_training_parameters( dataDir, metaFile, modelDevice, modelSize, epoch_override, bsize_override, lRate_override ):
 
-	nGPU        = pt.cuda.device_count()
-	totalEpochs = epoch_override or TRAIN_EPOCHS
-	mData       = CFR_metadata.pyload( from_file=metaFile )
-	modelIter   = mData.get_current_iter()
-	modelName   = f"M{modelSize}T{modelIter}"
-	iterPOV     = (( modelIter+INITIAL_POV ) % NUM_PLAYERS) + 1
-	trainFile   = dataDir + f"/p{iterPOV}advs_TRAIN.pickle"
-	valFile     = dataDir + f"/p{iterPOV}advs_VAL.pickle"
-	tsamples    = load_nn_samples( from_file=trainFile )
-	vsamples    = load_nn_samples( from_file=valFile )
-	ntSamples   = len( tsamples )
-	nvSamples   = len( vsamples )
-	nSamples    = ntSamples + nvSamples
-	bsizeScale  = nGPU / MAX_GPUS
-	bsizeGlobal = int( bsize_override ) or int( BASE_BATCH_SIZE * bsizeScale )
-	bsizeLocal  = int( bsizeGlobal//nGPU )
-	lRate       = lRate_override or BASE_LRATE
+	nDevices     = pt.cuda.device_count() if modelDevice == 'cuda' else 1
+	totalEpochs  = epoch_override or TRAIN_EPOCHS
+	mData        = CFR_metadata.pyload( from_file=metaFile )
+	modelIter    = mData.get_current_iter()
+	modelName    = f"M{modelSize}T{modelIter}"
+	iterPOV      = (( modelIter+INITIAL_POV ) % NUM_PLAYERS) + 1
+	trainFile    = dataDir + f"/p{iterPOV}advs_TRAIN.pickle"
+	valFile      = dataDir + f"/p{iterPOV}advs_VAL.pickle"
+	tsamples     = load_nn_samples( from_file=trainFile )
+	vsamples     = load_nn_samples( from_file=valFile )
+	ntSamples    = len( tsamples )
+	nvSamples    = len( vsamples )
+	nSamples     = ntSamples + nvSamples
+	bsizeScale   = nDevices / MAX_GPUS
+	bsizeGlobal  = int( bsize_override ) or int( BASE_BATCH_SIZE * bsizeScale )
+	bsizeLocal   = int( bsizeGlobal//nDevices )
+	lRate        = lRate_override or BASE_LRATE
+	fabAccel     = modelDevice
+	fabStrategy  = 'ddp' if modelDevice == 'cuda' else 'auto'
+	fabPrecision = '16-mixed' if modelDevice == 'cuda' else '32-true'
+
 
 	return {
-		'nGPU':        nGPU,
-		'totalEpochs': totalEpochs,
-		'mData':       mData,
-		'modelIter':   modelIter,
-		'modelName':   modelName,
-		'tsamples':    tsamples,
-		'vsamples':    vsamples,
-		'ntSamples':   ntSamples,
-		'nvSamples':   nvSamples,
-		'nSamples':    nSamples,
-		'bsizeGlobal': bsizeGlobal,
-		'bsizeLocal':  bsizeLocal,
-		'lRate':       lRate,
+		'nDevices':     nDevices,
+		'totalEpochs':  totalEpochs,
+		'mData':        mData,
+		'modelIter':    modelIter,
+		'modelName':    modelName,
+		'tsamples':     tsamples,
+		'vsamples':     vsamples,
+		'ntSamples':    ntSamples,
+		'nvSamples':    nvSamples,
+		'nSamples':     nSamples,
+		'bsizeGlobal':  bsizeGlobal,
+		'bsizeLocal':   bsizeLocal,
+		'lRate':        lRate,
+		'fabAccel':     fabAccel,
+		'fabStrategy':  fabStrategy,
+		'fabPrecision': fabPrecision,
 	}
 
 
 # Executes the actual training loop. Instantiates new untrained AdvNet, sets up distributed Fabric 
 # training environment, loads distributed training data, and executes epoch-by-epoch logic.
-def ModelTrainer( dataDir, modelSize, epoch_override=0, bsize_override=0, lRate_override=0 ):
+def ModelTrainer( dataDir, modelDevice, modelSize, epoch_override=0, bsize_override=0, lRate_override=0 ):
 
 	# Torch flags shown to improve training performance
-	pt.set_float32_matmul_precision( 'high' )
-	pt.backends.cudnn.benchmark = True
+	if modelDevice == 'cuda':
+		pt.set_float32_matmul_precision( 'high' )
+		pt.backends.cudnn.benchmark = True
 
 	# First, get parameters and variables we need, and set up training entities
 	metaFile  = dataDir + '/metadata.pickle'
 	modelFile = dataDir + '/models.pickle'
-	trainVars = _get_training_parameters( dataDir, metaFile, modelSize, 
+	trainVars = _get_training_parameters( dataDir, metaFile, modelDevice, modelSize, 
 										  epoch_override, bsize_override, lRate_override )
-	aNet      = AdvNet( modelIter=trainVars[ 'modelIter' ], modelSize=modelSize, for_training=True )
-	aNet      = SyncBatchNorm.convert_sync_batchnorm( aNet )
+	modelIter = trainVars[ 'modelIter' ]
+	nDevices  = trainVars[ 'nDevices' ]
+	aNet      = AdvNet( modelIter=modelIter, modelSize=modelSize, modelDevice=modelDevice, for_training=True )
+	aNet      = SyncBatchNorm.convert_sync_batchnorm( aNet ) if nDevices > 1 else aNet
 	huber     = pt.nn.HuberLoss( reduction='none' )
 	opt       = pt.optim.Adam( aNet.parameters(), lr=trainVars[ 'lRate' ], eps=1e-08, foreach=True )
 	lRate     = trainVars[ 'lRate' ]
@@ -389,8 +399,8 @@ def ModelTrainer( dataDir, modelSize, epoch_override=0, bsize_override=0, lRate_
 
 	# Set up and launch Fabric distributed environment
 	# Multi-processes get spun up here, everything after this runs independently per-process
-	Fab = Fabric( accelerator='cuda', devices=trainVars[ 'nGPU' ], 
-				  strategy='ddp', precision='16-mixed', callbacks=[TM] )
+	Fab = Fabric( accelerator=trainVars[ 'fabAccel' ], devices=nDevices, strategy=trainVars[ 'fabStrategy' ],
+				  precision=trainVars[ 'fabPrecision' ], callbacks=[TM] )
 	Fab.launch()
 	R = Fab.global_rank # this process's rank (just this process's GPU ID, basically)
 
@@ -420,14 +430,15 @@ def ModelTrainer( dataDir, modelSize, epoch_override=0, bsize_override=0, lRate_
 	# Construct per-process data loaders
 	# Barriers are defensive to make sure things stay in sync around potentially slow operations
 	Fab.barrier() 
-	s = 's' if trainVars[ 'nGPU' ] > 1 else ''
-	S = 'S' if trainVars[ 'nGPU' ] > 1 else ''
-	Fab.print( f"\nConstructing DATAMACHINE{S} for {trainVars[ 'nGPU' ]} rank{s}..." )
-	tDM_n = DATAMACHINE( trainVars[ 'tsamples' ], trainVars[ 'bsizeLocal' ], trainVars[ 'nGPU' ], R )
-	vDM_n = DATAMACHINE( trainVars[ 'vsamples' ], trainVars[ 'bsizeLocal' ], trainVars[ 'nGPU' ], R )
+	s = 's' if nDevices > 1 else ''
+	S = 'S' if nDevices > 1 else ''
+	DEV = 'GPU' if modelDevice == 'cuda' else 'CPU'
+	Fab.print( f"\nConstructing DATAMACHINE{S} for {nDevices} rank{s}..." )
+	tDM_n = DATAMACHINE( trainVars[ 'tsamples' ], trainVars[ 'bsizeLocal' ], nDevices, R, modelDevice )
+	vDM_n = DATAMACHINE( trainVars[ 'vsamples' ], trainVars[ 'bsizeLocal' ], nDevices, R, modelDevice )
 	Fab.barrier()
-	Fab.print( f"{trainVars[ 'nGPU' ]} train & val DATAMACHINE{S} constructed successfully." )
-	Fab.print( f"\nSUCCESSFULLY CONFIGURED NN, OPTIMIZER, AND DATAMACHINE{S} FOR TRAINING ON {trainVars['nGPU']} GPU{s}" )
+	Fab.print( f"{nDevices} train & val DATAMACHINE{S} constructed successfully." )
+	Fab.print( f"\nSUCCESSFULLY CONFIGURED NN, OPTIMIZER, AND DATAMACHINE{S} FOR TRAINING ON {nDevices} {DEV}{s}" )
 
 	# Tell each TrainManager its rank
 	Fab.barrier()

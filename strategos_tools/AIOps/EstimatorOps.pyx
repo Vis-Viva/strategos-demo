@@ -38,20 +38,24 @@ from torch.cuda import empty_cache as empty_GPU_cache
 # These are singletons so they can be directly called from within this module or externally.
 
 
-cdef void setup_advnet( str modelFile, uint modelIter, uint modelSize=64, uint GPUrank=0, bint Compiled=FALSE ): #noexcept:
-	cdef object aNet = AdvNet( modelSize=modelSize, modelIter=modelIter, load_from_file=modelFile )
-	aNet.to( f"cuda:{GPUrank}" )
-	global ADVNET
-	ADVNET = aNet #if not compiled else AdvNetCompiler( aNet,GPUrank )
+cdef void set_estimator_device( int deviceID ): #noexcept:
+	global ESTIMATOR_DEVICE
+	ESTIMATOR_DEVICE = "cpu" if deviceID == -1 else f"cuda:{deviceID}"
 
-cdef void setup_multimodel( str modelFile, uint iterSpan, uint modelSize=64, uint GPUrank=0, bint Compiled=FALSE ): #noexcept:
-	cdef object MM = MultiModel( modelSize=modelSize, mFile=modelFile, iterSpan=iterSpan, GPUrank=GPUrank )
+cdef void setup_advnet( str modelFile, uint modelIter, uint modelSize=64, bint Compiled=FALSE ): #noexcept:
+	cdef object aNet = AdvNet( modelIter, modelSize, ESTIMATOR_DEVICE, modelFile )
+	aNet.to( ESTIMATOR_DEVICE )
+	global ADVNET
+	ADVNET = aNet #if not compiled else AdvNetCompiler( aNet,ESTIMATOR_DEVICE )
+
+cdef void setup_multimodel( str modelFile, uint iterSpan, uint modelSize=64, bint Compiled=FALSE ): #noexcept:
+	cdef object MM = MultiModel( modelFile, iterSpan, modelSize, ESTIMATOR_DEVICE )
 	global MULTIMODEL
 	MULTIMODEL = MM #if not compiled else MMCompiler( MM,iterSpan,GPUrank )
 
 # Having two multimodel singletons allows us to evaluate one test model against another
-cdef void setup_alt_multimodel( str modelFile, uint iterSpan, uint modelSize=64, uint GPUrank=0, bint Compiled=FALSE ): #noexcept:
-	cdef object aMM = MultiModel( modelSize=modelSize, mFile=modelFile, iterSpan=iterSpan, GPUrank=GPUrank )
+cdef void setup_alt_multimodel( str modelFile, uint iterSpan, uint modelSize=64, bint Compiled=FALSE ): #noexcept:
+	cdef object aMM = MultiModel( modelFile, iterSpan, modelSize, ESTIMATOR_DEVICE )
 	global ALT_MULTIMODEL
 	ALT_MULTIMODEL = aMM #if not compiled else MMCompiler( aMM,iterSpan,GPUrank )
 
@@ -62,9 +66,9 @@ cdef void setup_alt_multimodel( str modelFile, uint iterSpan, uint modelSize=64,
 
 
 # Simple: get formatted inputs ⟶ run them through ADVNET ⟶ return
-cdef flt1 __AdvEstimator( infoset I, int GPUrank=0 ): #noexcept:
+cdef flt1 __AdvEstimator( infoset I ): #noexcept:
 
-	cdef AdvNetInputs inputs = AdvNetInputs( I, GPUrank )
+	cdef AdvNetInputs inputs = AdvNetInputs( I, ESTIMATOR_DEVICE )
 	with nn_eval_mode():
 		return ADVNET( inputs.H,
 					   inputs.hC_c, inputs.hC_r, inputs.hC_s,
@@ -91,8 +95,8 @@ cdef flt1 __ActionProbs( flt1 advI ): #noexcept: # advI shape = (|A(I)|,)
 	return NP( Amax,dtype=f32 ) / np.count_nonzero( Amax )
 
 # Estimate α(I) ⟶ derive σ(I) as above; used during tree traversal to strategy-sample opponent actions
-cdef flt1   Strat( infoset I, int GPUrank=0 ): #noexcept:
-	cdef flt1 advI = __AdvEstimator( I, GPUrank )
+cdef flt1   Strategy( infoset I ): #noexcept:
+	cdef flt1 advI = __AdvEstimator( I )
 	return __ActionProbs( advI )
 
 
@@ -102,7 +106,7 @@ cdef flt1   Strat( infoset I, int GPUrank=0 ): #noexcept:
 # Since A(Iᵢ)=A(Iⱼ) ∀Iᵢ,Iⱼ∈𝓘 wherever any multiops are used, henceforth A:=A(I₀)
 
 
-# Transforms legacy MM outputs from list to flt3. Legacy use only; unusued in modern infrastructure
+# Transforms legacy MM outputs from list to flt3. Legacy use only, unusued in modern infrastructure
 cdef flt3 __MultiAdvArray( list rawOutputs, uint T, uint nI, uint nA ): #noexcept:
 	return CONTIG( NP( rawOutputs,dtype=f32 ).reshape(T,nI,nA) )
 
@@ -114,9 +118,9 @@ cdef list __tolist( object MMoutputs ): #noexcept:
 		return MMoutputs.detach().to( device='cpu',dtype=tf32 ).numpy().ravel().tolist()
 
 # Enables us to do evaluations against legacy models with old input/output formatting
-cdef flt3 __LegacyMultiAdvEstimator( uint actingPlayer, infoset I, uint GPUrank=0, bint Alt_Model=FALSE ): #noexcept:
+cdef flt3 __LegacyMultiAdvEstimator( uint actingPlayer, infoset I, bint Alt_Model=FALSE ): #noexcept:
 	
-	cdef MMInputs_old inputs = MMInputs_old( actingPlayer, I, MULTIMODEL.IterSpan, GPUrank )
+	cdef MMInputs_old inputs = MMInputs_old( actingPlayer, I, MULTIMODEL.IterSpan, ESTIMATOR_DEVICE )
 	cdef object       outputs
 
 	with nn_eval_mode():
@@ -124,9 +128,9 @@ cdef flt3 __LegacyMultiAdvEstimator( uint actingPlayer, infoset I, uint GPUrank=
 		return __MultiAdvArray( __tolist( outputs ), inputs.T, inputs.nI, inputs.nA ) # (T,|𝓘|,|A|)
 
 # Get formatted inputs ⟶ run them through [ALT_]MULTIMODEL ⟶ format GPU tensor output into cpu array ⟶ return
-cdef flt3 __MultiAdvEstimator( uint actingPlayer, infoset I, uint GPUrank=0, bint Alt_Model=FALSE ): #noexcept:
+cdef flt3 __MultiAdvEstimator( uint actingPlayer, infoset I, bint Alt_Model=FALSE ): #noexcept:
 	
-	cdef MMInputs inputs = MMInputs( actingPlayer, I, MULTIMODEL.IterSpan, GPUrank )
+	cdef MMInputs inputs = MMInputs( actingPlayer, I, MULTIMODEL.IterSpan, ESTIMATOR_DEVICE )
 
 	with nn_eval_mode():
 
@@ -157,7 +161,7 @@ cdef flt2 __MultiActionProbs( flt2 multiAdvs ): #noexcept:
 		uint  A=1
 		flt2  aPlus          = NP( multiAdvs ).clip( min=0 )         # (|𝓘|,|A|)
 		flt2  advSums        = NP( aPlus ).sum( axis=A,keepdims=1 )  # (|𝓘|,1)
-		uint2 I_Has_Pos_Advs = Has_Nonzero( multiAdvs )              # (|𝓘|,1); =1 if ∃a∈A(I):α(I,a)>0 else 0
+		uint2 I_Has_Pos_Advs = Has_Nonzero( multiAdvs, along_axis=A ) # (|𝓘|,1); =1 if ∃a∈A(I):α(I,a)>0 else 0
 
 	if NP( I_Has_Pos_Advs ).all():
 		return ArrDiv2d( aPlus, advSums ) # (|𝓘|,|A|); ∀I∈𝓘, ∃a∈A(I):α(I,a)>0
@@ -177,14 +181,14 @@ cdef flt2 __MultiActionProbs( flt2 multiAdvs ): #noexcept:
 
 # Estimate αᵗ(𝓘) ⟶ derive σᵗ(𝓘) ∀ t<T in parallel as above. Used during collection to init GTNode cgraphs
 # TODO: Def need to write tests for this. Need to be absolutely certain indexing stuff here is correct
-cdef flt3   MultiStrats( uint actingPlayer, infoset I, uint GPUrank=0, bint Alt_Model=FALSE, bint Legacy_Model=FALSE ): #noexcept:
+cdef flt3   MultiStrats( uint actingPlayer, infoset I, bint Alt_Model=FALSE, bint Legacy_Model=FALSE ): #noexcept:
 
 	cdef:
 		# Is 𝓘 one definite POV Infoset or many possible opp Infosets?
 		bint  For_Opp = Are_Opponents( actingPlayer, I.POVplayer ),                                                    \
 			  For_Pov = not For_Opp
-		flt3  tAdvs   = ( __MultiAdvEstimator( actingPlayer, I, GPUrank, Alt_Model ) if not Legacy_Model else
-		                  __LegacyMultiAdvEstimator( actingPlayer, I, GPUrank, Alt_Model ) ) # (T,|𝓘|,|A|) both cases
+		flt3  tAdvs   = ( __MultiAdvEstimator( actingPlayer, I, Alt_Model ) if not Legacy_Model else
+		                  __LegacyMultiAdvEstimator( actingPlayer, I, Alt_Model ) ) # (T,|𝓘|,|A|) both cases
 		uint  T       = tAdvs.shape[ 0 ],                                                                              \
 			  nA      = tAdvs.shape[ 2 ],                                                                              \
 			  nH      = NUM_POSSIBLE_HANDS,                                                                            \

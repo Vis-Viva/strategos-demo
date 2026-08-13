@@ -32,7 +32,7 @@ from torch.cuda import empty_cache as clear_GPU_cache
 # process that collects game trajectory data and calculates neural net targets from it. This 
 # constitutes the collection and calculation phases of our collect -> calc -> train loop. Objects
 # and operations here include:
-# 	- formal game tree structures like weighted connection graphs and path mappings
+# 	- formal game tree structures like weighted tree connection graphs and traversal path mappings
 # 	- central orchestration of the DFS-style collection process
 # 	- math that processes data in these structures into training targets
 # ==================================================================================================
@@ -131,10 +131,10 @@ cdef class ConnectionMap:
 cdef class GTNode:
 
 	# Some more complex structures here, so actually need a proper python-level init
-	def __init__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal, uint estimatorRank=0 ):
-		self.__INIT__( traversalPOV, fromNode, Is_Terminal, estimatorRank )
+	def __init__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal ):
+		self.__INIT__( traversalPOV, fromNode, Is_Terminal )
 
-	cdef void __INIT__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal, uint estimatorRank=0 ): #noexcept:
+	cdef void __INIT__( self, uint traversalPOV, gamenode fromNode, bint Is_Terminal ): #noexcept:
 
 		cdef gamenode parentNode = fromNode.ParentNode( Include_Deals=FALSE )
 
@@ -148,7 +148,7 @@ cdef class GTNode:
 		if Is_Terminal:
 			self.__INIT_TERMINUS__()
 		else:          
-			self.__INIT_NON_TERMINUS__( estimatorRank )
+			self.__INIT_NON_TERMINUS__()
 
 	# Placeholder until we decide whether we want to re-implement strat accumulation (we prob won't)
 	cdef vector_int    __AInds( self, uint numActions ): #noexcept:
@@ -161,10 +161,10 @@ cdef class GTNode:
 
 	# GT branch weights from self node to its successors = ActingPlayer's action probs @ from_node.
 	# Includes action probs estimated by all iteration AdvNets, and for all possible opp hands if
-	# ActingPlayer ≠ TraversalPOVPlayer. estimatorRank specifies which GPU to use for inference.
-	cdef ConnectionMap __CGraph( self, uint estimatorRank=0 ): #noexcept:
+	# ActingPlayer ≠ TraversalPOVPlayer.
+	cdef ConnectionMap __CGraph( self ): #noexcept:
 
-		cdef flt3     aProbs   = ESTIMATOR.MultiStrats( self.ActingPlayer, self.I_tp, estimatorRank )
+		cdef flt3     aProbs   = ESTIMATOR.MultiStrats( self.ActingPlayer, self.I_tp )
 		cdef MultiMat cWeights = MultiMat( from_view=aProbs ) # always (|A|,1326,T)
 		return ConnectionMap( from_key=self.Key, to_keys=self.SuccessorKeys, weights=cWeights )
 
@@ -201,7 +201,7 @@ cdef class GTNode:
 		return vector_ll( from_view=sKeys )
 
 	# Normal initialization for non-endgame nodes
-	cdef void          __INIT_NON_TERMINUS__( self, uint estimatorRank ): #noexcept:
+	cdef void          __INIT_NON_TERMINUS__( self ): #noexcept:
 
 		self.I_ap = self.I_tp if not Are_Opponents( self.TraversingPlayer, self.ActingPlayer ) else                    \
 					infoset( sourceNode=self.GameNode, perspective_of=self.ActingPlayer )
@@ -215,7 +215,7 @@ cdef class GTNode:
 
 		# Defines connection structure between this node, its direct successors, & reachable endgames
 		self.SuccessorKeys   = self.__get_successor_node_keys()
-		self.ConnectionGraph = self.__CGraph( estimatorRank ) # axes = (a,h,t)
+		self.ConnectionGraph = self.__CGraph() # axes = (a,h,t)
 		self.SubKeys         = vector_ll()
 		self.Zn              = vector_ll()
 		self.FwdReaches      = None # don't need to alloc mem for this until Solvable == TRUE
@@ -508,8 +508,9 @@ cdef class CFRCollector:
 
 		if ((kDone % 10)==0) or (kDone==kReq):
 			if (kDone % 100)==0:
-				if (kDone % 500)==0: 
-					clear_GPU_cache() # just housekeeping to reduce mem fragmentation
+				if (kDone % 500)==0:
+					if ESTIMATOR.ESTIMATOR_DEVICE != "cpu": 
+						clear_GPU_cache() # just housekeeping to reduce mem fragmentation
 
 				kDur = TimeNow() - self.SegmentStart
 				kAvg = kDur/kDone
@@ -568,7 +569,7 @@ cdef class CFRCollector:
 	# Just initializes a game tree entry for a newly encountered node
 	cdef void       initialize_entry( self, gamenode n, bint Is_Terminal ): #noexcept:
 
-		cdef GTNode newGTNode = GTNode( self.POVplayer, n, Is_Terminal, estimatorRank=self.RANK_P )
+		cdef GTNode newGTNode = GTNode( self.POVplayer, n, Is_Terminal )
 		cdef uint   aPlayer   = newGTNode.ActingPlayer
 
 		self.nNodesSeen[ aPlayer ] += 1
@@ -629,8 +630,10 @@ cdef class CFRCollector:
 			# POVplayer state: explore all a∈A to find all reachable endgames
 			elif aPlayer==self.POVplayer:
 				nKey = currentNode.GTKey()
+
 				# Initialize new gametree node if we haven't been here before
-				if not self.Has_Encountered( nKey ): self.initialize_entry( currentNode, Is_Terminal=FALSE )
+				if not self.Has_Encountered( nKey ):
+					self.initialize_entry( currentNode, Is_Terminal=FALSE )
 
 				# Continue exploring a∈A as long as they exist and we haven't hit traversal limit
 				while (self.Node_Has_Unexplored_Actions( nKey ) and (not self.K_Phase_Complete)):
@@ -644,14 +647,16 @@ cdef class CFRCollector:
 			# Opponent state: sample one action according to their strategy
 			elif Are_Opponents( aPlayer, self.POVplayer ):
 				nKey = currentNode.GTKey()
-				# Initialize new gametree node if we haven't been here before
-				if not self.Has_Encountered( nKey ): self.initialize_entry( currentNode, Is_Terminal=FALSE )
 
-				oStrat = ESTIMATOR.Strat( self.at( nKey ).I_ap, GPUrank=self.RANK_P )
+				# Initialize new gametree node if we haven't been here before
+				if not self.Has_Encountered( nKey ): 
+					self.initialize_entry( currentNode, Is_Terminal=FALSE ) 
+
+				oStrat = ESTIMATOR.Strategy( self.at( nKey ).I_ap )
 				aIdx   = self.ActionSample( from_strategy=oStrat )
 
 				nextNode = self.NextSuccessor( for_key=nKey, aIdx=aIdx )
-				self.node_fully_explored( nKey ) #We only ever explore 1 action at opponent nodes
+				self.node_fully_explored( nKey ) # We only ever explore 1 action at opponent nodes
 				self.Collect( nextNode )
 
 			# Dealer state: generate deal event & continue traversal, no collector entry needed
@@ -1154,8 +1159,8 @@ cdef class CFRCollector:
 		
 		cdef:
 			uint ENDGAMES=0, PATHS=0
-			flt3 UZWeighted = self.ReachWeightedPayoffs( n )           # πᵗ(h,z)u(z); (|Z[I]|,1326,T) 
-			flt2 nExpVal    = NP( UZWeighted ).sum( axis=ENDGAMES )    # Σ{z∈Z[I]}( πᵗ(h,z)u(z) ); (1326,T)
+			flt3 UZWeighted = self.ReachWeightedPayoffs( n )           # (|Z[I]|,1326,T); πᵗ(h,z)u(z);              
+			flt2 nExpVal    = NP( UZWeighted ).sum( axis=ENDGAMES )    # (1326,T);        Σ{z∈Z[I]}( πᵗ(h,z)u(z) )
 			flt2 vITerms    = ArrMult2d( n.CFReaches.view(), nExpVal ) # (1326,T)
 			flt1 vI         = NP( vITerms ).sum( axis=PATHS )          # (T,)
 
@@ -1175,8 +1180,8 @@ cdef class CFRCollector:
 		for a from 1 <= a <= nA:
 			aKey            = n.SuccessorKeys.at( a-1 )
 			aNode           = self.at( aKey ) # node arrived at by doing action a
-			aUZWeighted     = self.ReachWeightedPayoffs( aNode )     # πᵗ(h·a,z)u(z); (|Z[I·a]|, 1326, T)
-			aExpVal         = NP( aUZWeighted ).sum( axis=ENDGAMES ) # Σ{z}( πᵗ(h·a,z)u(z) ); (1326,T)
+			aUZWeighted     = self.ReachWeightedPayoffs( aNode )     # (|Z[I·a]|, 1326, T); πᵗ(h·a,z)u(z)
+			aExpVal         = NP( aUZWeighted ).sum( axis=ENDGAMES ) # (1326,T);            Σ{z}( πᵗ(h·a,z)u(z) )
 			AExpVals[ a-1 ] = aExpVal
 
 		vIATerms = ArrMult3d( CFReaches, AExpVals ) # (|A|,1326,T)
@@ -1381,7 +1386,7 @@ cdef class CFRCollector:
 		#self.print_solvable_subgame_info()
 
 # The very last step after an iter's training phase completes is destruction of multi-worker temp
-# data. If any still exists, we know we're not ready to start this iter's collection run yet.
+# data, so absence of this temp data means prev iter is fully done and we can safely start this one.
 cdef void __await_prev_iter_completion( str advDir, str recDir ): #noexcept:
 	
 	cdef:
@@ -1416,8 +1421,9 @@ cdef void __await_prev_iter_completion( str advDir, str recDir ): #noexcept:
 	print( f"PREVIOUS ITERATION COMPLETED, COMMENCING NEXT CFR ITER".center(100) )
 	print( f'='*100 )
 
-# Executes this worker's data collection segment: traverse gametree, derive targets, and save.
-cdef void _Do_Collection_Segment( str dataDir, int pRank, int sRank, int mSize, int gameSize, int nPlayers, int travs ): #noexcept:
+# Executes this worker's data collection segment: traverse gametree, derive targets, save targets to disk.
+cdef void _Do_Collection_Segment( int device, str dataDir, int pRank, int sRank, 
+								  int mSize, int gameSize, int nPlayers, int travs ): #noexcept:
 
 	cdef str advDir    = dataDir + "/segadvs",                                                                         \
 			 recDir    = dataDir + "/segrecs",                                                                         \
@@ -1451,13 +1457,14 @@ cdef void _Do_Collection_Segment( str dataDir, int pRank, int sRank, int mSize, 
 	print( f"="*100 )
 
 	# Configure this worker's estimator singletons for this iter
-	ESTIMATOR.setup_advnet( modelSize=mSize, modelIter=t-1, modelFile=modelFile, GPUrank=pRank )
+	ESTIMATOR.set_estimator_device( device )
+	ESTIMATOR.setup_advnet( modelSize=mSize, modelIter=t-1, modelFile=modelFile )
 	ESTIMATOR.ADVNET.train( False )
-	ESTIMATOR.setup_multimodel( modelSize=mSize, iterSpan=t-1, modelFile=modelFile, GPUrank=pRank )
+	ESTIMATOR.setup_multimodel( modelSize=mSize, iterSpan=t-1, modelFile=modelFile )
 	ESTIMATOR.MULTIMODEL.train( False )
 
-	cdef str GPU = f"cuda:{pRank}"
-	print( f"Prev iter AdvNet and MultiModel ( M{mSize}T{t-1} ) state setup completed on GPU {GPU}" )
+	cdef str devStr = f"{device} ({ESTIMATOR.ESTIMATOR_DEVICE})"
+	print( f"Prev iter AdvNet and MultiModel ( M{mSize}T{t-1} ) state setup completed on device {devStr}" )
 	print( f"\tESTIMATOR.ADVNET.ModelIter    = {ESTIMATOR.ADVNET.ModelIter}, .training = {ESTIMATOR.ADVNET.training}" )
 	print( f"\tESTIMATOR.MULTIMODEL.IterSpan = {ESTIMATOR.MULTIMODEL.IterSpan}" )
 
@@ -1466,8 +1473,9 @@ cdef void _Do_Collection_Segment( str dataDir, int pRank, int sRank, int mSize, 
 	collector.Collection_Segment_Completed() # Collection phase done; do phase-end housekeeping
 
 
-def Do_Collection_Segment( str dataDir, int pRank, int sRank, int mSize, int gameSize, int nPlayers, int travs ):
-	_Do_Collection_Segment( dataDir, pRank, sRank, mSize, gameSize, nPlayers, travs )
+def Do_Collection_Segment( int device, str dataDir, int pRank, int sRank, 
+						   int mSize, int gameSize, int nPlayers, int travs ):
+	_Do_Collection_Segment( device, dataDir, pRank, sRank, mSize, gameSize, nPlayers, travs )
 
 
 # *-* #

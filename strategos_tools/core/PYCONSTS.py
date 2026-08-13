@@ -1,6 +1,5 @@
 from sys   import getsizeof as sizeof
 from numpy import asarray as NP, empty, uintc
-from PIL   import Image as IMG
 
 
 # ----- UNIVERSAL CONSTS ---------------------------------------------------------------------------

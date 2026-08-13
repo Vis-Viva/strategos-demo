@@ -1,0 +1,20 @@
+# Python / packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.egg
+
+# Cython / compiled extensions
+*.so
+*.c
+*.html
+
+# Project runtime data
+data/
+
+# Editor
+.cursor/
+.cursorignore
+strategos-new.code-workspace

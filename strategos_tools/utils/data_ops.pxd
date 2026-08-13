@@ -35,5 +35,7 @@ cdef list  _load_true_samples( str from_file ) #noexcept
 
 cdef void  _post_iter_cleanup( str advDir, uint for_iter ) #noexcept
 
+cdef void  _post_iter_cleanup( str advDir, uint for_iter ) #noexcept
+
 
 # *-* #
