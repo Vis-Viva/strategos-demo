@@ -115,6 +115,8 @@ cdef class gamenode:
 
 	cdef ll        GTKey_old( self ) #noexcept
 
+	cdef ll      __fnv1a_u32( self, ll h, uint val ) #noexcept
+
 	cdef ll        GTKey( self ) #noexcept
 
 	cdef void      summary( self, bint Compact=* ) #noexcept

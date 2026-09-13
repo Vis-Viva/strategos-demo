@@ -748,33 +748,43 @@ cdef class gamenode:
 	cdef ll          GTKey_old( self ): #noexcept:
 		return hash( str(NP( self.History,dtype=uintc ).tobytes()) )
 
-	# Much faster manual hashing of history array to generate a unique gamenode ID
+	# Just a manual hashing helper for generating GTKeys
+	cdef inline ll __fnv1a_u32( self, ll h, uint val ): #noexcept:
+		
+		cdef uchar byte
+		
+		byte   = <uchar>(val & 0xFF)
+		h     ^= byte
+		h     *= 1099511628211LL
+		byte   = <uchar>((val >> 8) & 0xFF)
+		h     ^= byte
+		h     *= 1099511628211LL
+		byte   = <uchar>((val >> 16) & 0xFF)
+		h     ^= byte
+		h     *= 1099511628211LL
+		byte   = <uchar>((val >> 24) & 0xFF)
+		h     ^= byte
+		h     *= 1099511628211LL
+
+		return h
+
+	# Very fast manual FNV-1a hashing of history + initial conds to generate a unique node ID.
 	cdef ll          GTKey( self ): #noexcept:
 
 		cdef:
-			uint  rows = self.History.shape[ 0 ], cols = self.History.shape[ 1 ], i, j, val
+			uint  rows = self.History.shape[ 0 ], cols = self.History.shape[ 1 ], i, j, p
 			ll    gtKey = <ll>14695981039346656037ULL
-			uchar byte
+
+		gtKey = self.__fnv1a_u32( gtKey, self.PLAYER_COUNT )
+		gtKey = self.__fnv1a_u32( gtKey, self.ButtonPos )
+		gtKey = self.__fnv1a_u32( gtKey, self.SmallBlindAmt )
+		
+		for p from 0 <= p < self.InitialStacks.shape[ 0 ]:
+			gtKey = self.__fnv1a_u32( gtKey, self.InitialStacks[ p ] )
 
 		for i from 0 <= i < rows:
 			for j from 0 <= j < cols:
-				val    = self.History[ i,j ]
-
-				byte   = <uchar>(val & 0xFF) 
-				gtKey ^= byte
-				gtKey *= 1099511628211LL
-
-				byte   = <uchar>((val >> 8) & 0xFF) 
-				gtKey ^= byte
-				gtKey *= 1099511628211LL
-
-				byte   = <uchar>((val >> 16) & 0xFF) 
-				gtKey ^= byte
-				gtKey *= 1099511628211LL
-
-				byte   = <uchar>((val >> 24) & 0xFF)
-				gtKey ^= byte
-				gtKey *= 1099511628211LL
+				gtKey = self.__fnv1a_u32( gtKey, self.History[ i,j ] )
 
 		return gtKey
 
