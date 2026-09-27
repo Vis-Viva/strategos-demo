@@ -410,8 +410,8 @@ cdef class CFRCollector:
 		cdef str advFile = f"/p{POVplayer}advs_P{self.RANK_P}S{self.RANK_S}.pickle"
 		cdef str recFile = f"/segrecords_P{self.RANK_P}S{self.RANK_S}.pickle"
 
-		self.AdvFile    = dataDir + "/segadvs" + advFile # where this worker stores computed targets
-		self.RecordFile = dataDir + "/segrecs" + recFile # where this worker stores its metadata
+		self.AdvFile    = dataDir + "/segmented_samples" + advFile # where this worker stores computed targets
+		self.RecordFile = dataDir + "/segmented_records" + recFile # where this worker stores its metadata
 
 		# GameTree information
 		self.zKeys             = vector_ll()
@@ -1425,8 +1425,8 @@ cdef void __await_prev_iter_completion( str advDir, str recDir ): #noexcept:
 cdef void _Do_Collection_Segment( int device, str dataDir, int pRank, int sRank, 
 								  int mSize, int gameSize, int nPlayers, int travs ): #noexcept:
 
-	cdef str advDir    = dataDir + "/segadvs",                                                                         \
-			 recDir    = dataDir + "/segrecs",                                                                         \
+	cdef str advDir    = dataDir + "/segmented_samples",                                                                         \
+			 recDir    = dataDir + "/segmented_records",                                                                         \
 			 metaFile  = dataDir + "/metadata.pickle",                                                                 \
 			 modelFile = dataDir + "/models.pickle"
 

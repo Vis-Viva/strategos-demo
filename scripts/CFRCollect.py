@@ -52,8 +52,8 @@ def get_segmented_adv_files( advDir ):
 
 def main( pRank, sRank, mSize, gameSize, nPlayers, travs, device, dataDir ):
 
-	advDir       = dataDir + "/segadvs"
-	recDir       = dataDir + "/segrecs"
+	advDir       = dataDir + "/segmented_samples"
+	recDir       = dataDir + "/segmented_records"
 	metaFile     = dataDir + "/metadata.pickle"
 	deviceStr    = "CPU" if device==-1 else f"GPU cuda:{device}"
 	waiting      = len( get_segmented_adv_files( advDir ) ) > 0 

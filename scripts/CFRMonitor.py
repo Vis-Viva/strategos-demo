@@ -85,8 +85,8 @@ def get_metadata( metaFile ):
 def main( nSegments, dataDir ):
 
 	s        = 's' if nSegments>1 else ''
-	recDir   = dataDir + "/segrecs"
-	advDir   = dataDir + "/segadvs"
+	recDir   = dataDir + "/segmented_records"
+	advDir   = dataDir + "/segmented_samples"
 	metaFile = dataDir + "/metadata.pickle"
 
 	print( LOGO )

@@ -59,8 +59,6 @@ cdef:
 	╚═══════╝     ╚═╝    ╚═╝   ╚═╝ ╚═╝   ╚═╝     ╚═╝    ╚═══════╝ ╚═══════╝ ╚═══════╝ ╚═══════╝\n\
 \n\n"
 
-	str SEG_ADV_DIR = "data/segadvs/" 
-	str SEG_REC_DIR = "data/segrecs/" 
 	str LINE_UP     = '\033[1A'
 	str LINE_CLEAR  = '\x1b[2K'
 
