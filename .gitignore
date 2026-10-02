@@ -17,6 +17,9 @@ data/
 # Local review/test harness
 probes/
 
+# Random junk that shouldn't be tracked
+misc/
+
 # Editor
 .cursor/
 .cursorignore
