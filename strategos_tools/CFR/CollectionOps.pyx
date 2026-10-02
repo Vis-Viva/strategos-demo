@@ -807,17 +807,22 @@ cdef class CFRCollector:
 	# Finds all solvable subgame root nodes; i.e. all solvable nodes with no solvable predecessors
 	cdef void       find_solvable_subgames( self ): #noexcept:
 
-		cdef uint nSolvableKeys = self.SolvableKeys.size, k
-		cdef ll   rootKey, parentKey
+		cdef:
+			ll   rootKey, parentKey
+			uint nSolvableKeys = self.SolvableKeys.size, k
+			bint Is_POV_Node, No_Valid_Parent, Parent_Unsolvable
 		
 		print( f"\n\tFinding solvable Sᵣ in set of {nSolvableKeys} solvable nodes..." )
 
 		for k from 1 <= k <= nSolvableKeys:
-			rootKey   = self.SolvableKeys.at( k-1 )
-			parentKey = self.PrecedingPNodeKey( rootKey )
+			rootKey           = self.SolvableKeys.at( k-1 )
+			parentKey         = self.PrecedingPNodeKey( rootKey )
+			Is_POV_Node       = self.at( rootKey ).ActingPlayer == self.POVplayer
+			No_Valid_Parent   = parentKey==0
+			Parent_Unsolvable = (not No_Valid_Parent) and (not self.at( parentKey ).Solvable)
 
-			# If node has no solvable parent, it's the root of a solvable subgame
-			if (parentKey==0) or (not self.at( parentKey ).Solvable): 
+			# Solvable subgame root = POV node with no solvable parent
+			if Is_POV_Node and (Parent_Unsolvable or No_Valid_Parent): 
 				self.SolvableSubgames.append( rootKey )
 
 		print( f"\t{self.SolvableSubgames.size} solvable subgames found, proceeding to set counterfactual payoffs..." )
@@ -910,15 +915,18 @@ cdef class CFRCollector:
 		print( f"\nπ(𝓹(z),z) calculated ∀ z∈𝓩, time taken: {zTime:.3f}sec" )
 
 	# Just counts number of nodes along specified path where the specified player is acting
-	cdef uint     __count_steps( self, uint by_player, vector_ll along_path ): #noexcept:
+	cdef uint     __count_steps( self, uint by_player, vector_ll along_path, bint Exclude_Final=FALSE ): #noexcept:
 		
-		cdef uint pathLen = along_path.size, pSteps=0, s
+		cdef uint pathLen = along_path.size, pSteps=0, end, s
 		cdef ll   stepKey
-		
-		for s from 1 <= s <= pathLen:
-			stepKey = along_path.at( s-1 )
-			if self.at( stepKey ).ActingPlayer==by_player: 
-				pSteps+=1
+
+		if pathLen > 0:
+			end = pathLen - <uint>Exclude_Final
+
+			for s from 1 <= s <= end:
+				stepKey = along_path.at( s-1 )
+				if self.at( stepKey ).ActingPlayer==by_player: 
+					pSteps+=1
 
 		return pSteps
 
@@ -930,7 +938,7 @@ cdef class CFRCollector:
 		cdef:
 			vector_ll PS          = self.at( Sr ).PathKeys()
 			uint      clown       = OpponentsOf( self.POVplayer )[ 0 ],                                                \
-					  oSteps      = self.__count_steps( by_player=clown, along_path=PS ),                              \
+					  oSteps      = self.__count_steps( by_player=clown, along_path=PS, Exclude_Final=TRUE ),          \
 					  pathLen     = PS.size,                                                                           \
 					  PATHSTEPS   = 0, nH = NUM_POSSIBLE_HANDS, oppStep = 1, step
 			flt3      pathWeights = cyarr( (oSteps+1, nH, T), FLTSIZE, 'f' )
@@ -1228,8 +1236,8 @@ cdef class CFRCollector:
 			vector_ll S = Sr.SubKeys
 
 		nS = S.size
-		for s from 1 <= s <= nS:
-			subKey  = S.at( s-1 )
+		for s from 0 <= s <= nS: # Sᵣ ∉ SubKeys so just use s=0 case for Sᵣ itself
+			subKey  = S.at( s-1 ) if s>0 else Sr.Key 
 			subNode = self.at( subKey )
 
 			#TODO: Def of aInds here only works if not eliminating actions via strat accumulation

@@ -221,7 +221,7 @@ cdef class CFRCollector:
 
 	cdef void       set_base_fwd_reaches( self ) #noexcept
 
-	cdef uint     __count_steps( self, uint by_player, vector_ll along_path ) #noexcept
+	cdef uint     __count_steps( self, uint by_player, vector_ll along_path, bint Exclude_Final=* ) #noexcept
 
 	cdef matrix_flt RootCFReach( self, ll Sr ) #noexcept
 
