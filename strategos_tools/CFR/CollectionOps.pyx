@@ -871,6 +871,7 @@ cdef class CFRCollector:
 			Sr = self.SolvableSubgames.at( s-1 )
 			S  = self.at( Sr ).SubKeys
 			self.at( Sr ).initialize_fwd_reaches() # again, Sᵣ ∉ SubKeys
+			nInit += 1
 
 			for ss from 1 <= ss <= S.size:
 				subKey = S.at( ss-1 )
